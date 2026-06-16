@@ -6,11 +6,12 @@ import io.ktor.client.plugins.cookies.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.github.smyrgeorge.log4k.Logger
+import io.github.smyrgeorge.log4k.classic.debug
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.seconds
@@ -21,7 +22,7 @@ import kotlin.time.Duration.Companion.seconds
 typealias Uid = String
 
 interface ArkNights {
-    val logger: org.slf4j.Logger get() = LoggerFactory.getLogger(javaClass)
+    val logger: Logger get() = Logger.of("ArkNights")
 
     interface BaseResponse {
         val status: Int

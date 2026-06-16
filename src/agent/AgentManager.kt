@@ -13,7 +13,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
+import io.github.smyrgeorge.log4k.Logger
+import io.github.smyrgeorge.log4k.classic.info
 
 @Serializable
 sealed interface MessageTemplate {
@@ -91,7 +92,7 @@ class WebSocketAgent(val session: WebSocketSession) : Agent {
     companion object {
         val json = Json
         private val scope = CoroutineScope(Dispatchers.Default)
-        val logger = LoggerFactory.getLogger(WebSocketAgent::class.java)
+        val logger = Logger.of(WebSocketAgent::class)
     }
     override val scope = Companion.scope
     override suspend fun send(msg: MessageTemplate) {

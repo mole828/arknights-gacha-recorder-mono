@@ -4,7 +4,7 @@ services:
   backend: 
     image: hkccr.ccs.tencentyun.com/mole/arknights-gacha-recorder:release-434d4af697ff60a3a1fa45d196b1fbcaa67350b7
     environment:
-      - DATABASE_URL=jdbc:postgresql://127.0.0.1:5432/postgres
+      - DATABASE_URL=postgresql://127.0.0.1:5432/postgres
       - DATABASE_USER=root
       - DATABASE_PASSWORD=root
       - TZ=Asia/Shanghai

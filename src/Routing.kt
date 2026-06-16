@@ -3,29 +3,41 @@ package com.example
 import com.example.controller.agentPart
 import com.example.controller.userPart
 import com.example.service.GachaRecorder
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.plugins.statuspages.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
-import io.ktor.server.websocket.*
+import com.example.service.createGachaRepository
+import io.github.smyrgeorge.log4k.Logger
+import io.github.smyrgeorge.log4k.classic.info
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.ServerReady
+import io.ktor.server.application.install
+import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.response.respond
+import io.ktor.server.response.respondText
+import io.ktor.server.routing.get
+import io.ktor.server.routing.routing
+import io.ktor.server.websocket.WebSockets
+import io.ktor.server.websocket.pingPeriod
+import io.ktor.server.websocket.timeout
+import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.Frame
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import org.jetbrains.exposed.sql.Database
 import kotlin.time.Duration.Companion.seconds
 
-
 fun Application.configureRouting() {
+    val log = Logger.of("Application")
+
     @Serializable
     class ResponseTemplate(
         val code: Int,
         val msg: String,
     )
+
     install(StatusPages) {
         exception<IllegalArgumentException> { call: ApplicationCall, cause ->
             call.respond(
@@ -34,6 +46,7 @@ fun Application.configureRouting() {
             )
         }
     }
+
     install(WebSockets) {
         pingPeriod = 15.seconds
         timeout = 15.seconds
@@ -41,28 +54,22 @@ fun Application.configureRouting() {
         masking = false
     }
 
-    val dbUrl = System.getenv()["DATABASE_URL"]
-    requireNotNull(dbUrl) {
-        "DATABASE_URL is not set"
-    }
-    val dbUser = System.getenv()["DATABASE_USER"]
-    requireNotNull(dbUser) {
-        "DATABASE_USER is not set"
-    }
-    val dbPassword = System.getenv()["DATABASE_PASSWORD"]
-    requireNotNull(dbPassword) {
-        "DATABASE_PASSWORD is not set"
-    }
+    val dbUrl = requireNotNull(env("DATABASE_URL")) { "DATABASE_URL is not set" }
+    val dbUser = requireNotNull(env("DATABASE_USER")) { "DATABASE_USER is not set" }
+    val dbPassword = requireNotNull(env("DATABASE_PASSWORD")) { "DATABASE_PASSWORD is not set" }
 
-    val db = Database.connect(
-        url = dbUrl,
-        driver = "org.postgresql.Driver",
-        user = dbUser,
-        password = dbPassword,
+    val service = GachaRecorder(
+        repository = createGachaRepository(
+            url = dbUrl,
+            username = dbUser,
+            password = dbPassword,
+        )
     )
-    val service = GachaRecorder(database = db)
+    runBlocking {
+        service.init()
+    }
 
-    val openLoop = System.getenv()["OPEN_LOOP"]?.toBoolean() ?: false
+    val openLoop = env("OPEN_LOOP")?.toBoolean() ?: false
     log.info("OPEN_LOOP: $openLoop")
     if (openLoop) {
         monitor.subscribe(ServerReady) {
@@ -71,17 +78,16 @@ fun Application.configureRouting() {
             }
         }
     }
-    val agentKey = System.getenv()["AGENT_KEY"]
-    requireNotNull(agentKey)
-    val agentPool = mutableListOf<Any>()
+
+    val agentKey = requireNotNull(env("AGENT_KEY")) { "AGENT_KEY is not set" }
 
     routing {
-
         @Serializable
         data class HealthCheckStruct(
             val msg: String,
             val mainLoopRunning: Map<String, Boolean>,
         )
+
         get("/healthcheck") {
             call.respondText(
                 Json.encodeToString(
@@ -89,17 +95,15 @@ fun Application.configureRouting() {
                         msg = "ok",
                         mainLoopRunning = service.mainLoopRunning(),
                     )
-                ), ContentType.Application.Json
+                ),
+                ContentType.Application.Json
             )
         }
 
-
         val (agentList, taskList) = agentPart(agentKey, service)
-
-        userPart(db = db, agentList = agentList, taskList = taskList)
+        userPart(service = service, agentList = agentList, taskList = taskList)
 
         webSocket("/echo") {
-            // 不能让函数体结束, 调用结束会关闭连接
             for (frame in incoming) {
                 frame as? Frame.Text ?: continue
                 send(frame)
