@@ -33,6 +33,14 @@ kotlin {
         }
     }
 
+    macosArm64 {
+        binaries {
+            executable {
+                entryPoint = "com.example.main"
+            }
+        }
+    }
+
     jvmToolchain(25)
 
     sourceSets {
