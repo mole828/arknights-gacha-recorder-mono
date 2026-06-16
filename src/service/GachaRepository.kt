@@ -238,7 +238,7 @@ class SqlxGachaRepository(private val db: IPostgresSQL) : GachaRepository {
                 """.trimIndent()
             )
                 .bind("uid", gacha.uid)
-                .bind("gacha_ts", gacha.gachaTs.toString())
+                .bind("gacha_ts", gacha.gachaTs.toLong())
                 .bind("pos", gacha.pos.toInt())
                 .bind("char_id", gacha.charId)
                 .bind("char_name", gacha.charName)
