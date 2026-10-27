@@ -1,0 +1,16 @@
+product: jvm/app
+
+apply:
+  - //common.module-template.yaml
+
+settings:
+  jvm:
+    mainClass: com.example.MainKt
+
+dependencies:
+  - //modeling
+  - io.ktor:ktor-client-core
+  - io.ktor:ktor-client-cio
+  - io.ktor:ktor-client-websockets
+  - io.ktor:ktor-serialization-kotlinx-json
+  - org.jetbrains.kotlinx:kotlinx-datetime:0.8.0

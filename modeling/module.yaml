@@ -1,0 +1,6 @@
+product:
+  type: kmp/lib
+  platforms: [jvm, js, linuxX64, macosArm64]
+
+apply:
+  - //common.module-template.yaml

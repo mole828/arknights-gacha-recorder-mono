@@ -1,8 +1,6 @@
 package com.example.controller
 
 import agent.Agent
-import agent.MessageTemplate
-import agent.MessageTemplate.Task
 import api.ArkNights
 import com.example.service.GachaRecorder
 import io.github.smyrgeorge.log4k.Logger
@@ -17,9 +15,11 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import protocol.AgentHgToken
+import protocol.MessageTemplate
 import kotlin.time.Duration.Companion.seconds
 
-fun Routing.userPart(service: GachaRecorder, taskList: MutableList<Task>, agentList: List<Agent>) {
+fun Routing.userPart(service: GachaRecorder, taskList: MutableList<MessageTemplate.Task>, agentList: List<Agent>) {
     val log = Logger.of("UserRoute")
 
     get("/users") {
@@ -65,7 +65,7 @@ fun Routing.userPart(service: GachaRecorder, taskList: MutableList<Task>, agentL
         }
 
         agent.onMessageActions.add(fn)
-        agent.send(MessageTemplate.Task(hgToken, null))
+        agent.send(MessageTemplate.Task(AgentHgToken(hgToken.content), null))
 
         val returnData = withTimeoutOrNull(10.seconds) {
             when (tokenValid.await()) {

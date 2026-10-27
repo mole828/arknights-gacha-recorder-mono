@@ -1,7 +1,6 @@
 package com.example.controller
 
 import agent.Agent
-import agent.MessageTemplate
 import agent.WebSocketAgent
 import api.ArkNights
 import api.Uid
@@ -19,7 +18,36 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import protocol.AgentAccountInfo
+import protocol.AgentGachaInfo
+import protocol.AgentHgToken
+import protocol.MessageTemplate
 import kotlin.time.Duration.Companion.minutes
+
+private fun AgentHgToken.toApi() = ArkNights.HgToken(content)
+
+private fun ArkNights.HgToken.toProtocol() = AgentHgToken(content)
+
+private fun AgentAccountInfo.toApi() = ArkNights.AccountInfo(
+    channelMasterId = channelMasterId,
+    channelName = channelName,
+    isDefault = isDefault,
+    isDeleted = isDeleted,
+    isOfficial = isOfficial,
+    nickName = nickName,
+    uid = uid,
+)
+
+private fun AgentGachaInfo.toApi() = ArkNights.GachaApi.GachaInfo.Companion.DefaultImpl(
+    charId = charId,
+    charName = charName,
+    gachaTs = gachaTs,
+    isNew = isNew,
+    poolId = poolId,
+    poolName = poolName,
+    pos = pos,
+    rarity = rarity,
+)
 
 fun Routing.agentPart(
     agentKey: String,
@@ -41,7 +69,7 @@ fun Routing.agentPart(
         if (taskList.isEmpty()) {
             log.info("reload taskList")
             service.activeTasks().forEach {
-                taskList.add(MessageTemplate.Task(uid = it.uid, hgToken = it.hgToken))
+                taskList.add(MessageTemplate.Task(uid = it.uid, hgToken = it.hgToken.toProtocol()))
             }
             taskList.shuffle()
         }
@@ -101,21 +129,23 @@ fun Routing.agentPart(
                     }
                     async {
                         val hasRecord = service.record(
-                            msg.result.map { ArkNights.GachaApi.Gacha.from(uid = msg.uid, gachaInfo = it) }
+                            msg.result.map {
+                                ArkNights.GachaApi.Gacha.from(uid = msg.uid, gachaInfo = it.toApi())
+                            }
                         )
                         log.info("完成记录 $hasRecord 条")
-                        service.setTokenExpired(msg.hgToken, false)
+                        service.setTokenExpired(msg.hgToken.toApi(), false)
                         log.info("重制 hgToken 过期状态, 准备开启延迟进程")
                     }.await()
                 }
 
                 is MessageTemplate.Expired -> {
-                    service.setTokenExpired(msg.hgToken, true)
+                    service.setTokenExpired(msg.hgToken.toApi(), true)
                 }
 
                 is MessageTemplate.UserInfo -> {
                     log.info("更新用户信息: ${msg.info}")
-                    service.upsert(msg.info, msg.hgToken)
+                    service.upsert(msg.info.toApi(), msg.hgToken.toApi())
                 }
 
                 else -> {}

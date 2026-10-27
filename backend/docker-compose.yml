@@ -1,12 +1,16 @@
-version: "3"
-
 services:
-  backend: 
-    image: hkccr.ccs.tencentyun.com/mole/arknights-gacha-recorder:release-434d4af697ff60a3a1fa45d196b1fbcaa67350b7
+  backend:
+    image: arknights-gacha-recorder:local
+    platform: linux/amd64
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
     environment:
-      - DATABASE_URL=postgresql://127.0.0.1:5432/postgres
-      - DATABASE_USER=root
-      - DATABASE_PASSWORD=root
-      - TZ=Asia/Shanghai
-      - OPEN_LOOP=false
+      DATABASE_URL: ${DATABASE_URL:-postgresql://127.0.0.1:5432/postgres}
+      DATABASE_USER: ${DATABASE_USER:-postgres}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Set DATABASE_PASSWORD}
+      AGENT_KEY: ${AGENT_KEY:?Set AGENT_KEY}
+      TZ: Asia/Shanghai
+      PORT: ${PORT:-8080}
+      OPEN_LOOP: ${OPEN_LOOP:-false}
     network_mode: host

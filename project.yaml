@@ -1,0 +1,8 @@
+modules:
+  - agent
+  - backend
+  - backend/jvm
+  - backend/linux
+  - backend/macos
+  - modeling
+  - webui

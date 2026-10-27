@@ -19,7 +19,7 @@ import kotlin.time.Duration.Companion.seconds
 //    @JvmInline
 //    @Serializable
 //    value class Uid(val value: String)
-typealias Uid = String
+typealias Uid = model.Uid
 
 interface ArkNights {
     val logger: Logger get() = Logger.of("ArkNights")

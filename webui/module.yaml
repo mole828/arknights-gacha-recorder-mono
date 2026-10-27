@@ -1,0 +1,14 @@
+product: js/app
+
+apply:
+  - //common.module-template.yaml
+
+dependencies:
+  - //modeling
+  - org.jetbrains.kotlin-wrappers:kotlin-react:2025.3.26-19.1.0
+  - org.jetbrains.kotlin-wrappers:kotlin-react-dom:2025.3.26-19.1.0
+  - org.jetbrains.kotlin-wrappers:kotlin-emotion:2025.3.26
+  - org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0
+  - io.ktor:ktor-client-js:3.5.1
+  - org.jetbrains.kotlinx:kotlinx-datetime:0.8.0
+  - org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0

@@ -1,0 +1,9 @@
+product:
+  type: linux/app
+  platforms: [linuxX64]
+
+apply:
+  - //common.module-template.yaml
+
+dependencies:
+  - //backend

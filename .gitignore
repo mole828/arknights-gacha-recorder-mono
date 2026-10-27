@@ -1,0 +1,17 @@
+# Generated outputs and local dependencies
+build/
+dist/
+node_modules/
+
+# Local IDE state and caches
+.idea/
+.fleet/
+.gradle/
+.kotlin/
+.amper/
+*.iml
+.DS_Store
+
+# Local configuration
+.env
+*.test.json
