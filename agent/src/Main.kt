@@ -7,7 +7,6 @@ import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.header
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpMethod
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
@@ -29,6 +28,7 @@ private val agentKey = requireNotNull(System.getenv("AGENT_KEY")) {
 private val serverHost = System.getenv("SERVER_HOST") ?: "localhost"
 private val serverPort = System.getenv("SERVER_PORT")?.toInt() ?: 8080
 private val serverPath = System.getenv("SERVER_PATH") ?: "/agent/ws"
+private val serverUrl = System.getenv("SERVER_URL") ?: "ws://$serverHost:$serverPort$serverPath"
 
 private val ktorClient = HttpClient(CIO) {
     install(WebSockets) {
@@ -133,10 +133,7 @@ private class AgentCollector : Collector {
 
 private suspend fun connectOnce() {
     ktorClient.webSocket(
-        method = HttpMethod.Get,
-        host = serverHost,
-        port = serverPort,
-        path = serverPath,
+        urlString = serverUrl,
         request = {
             header(HttpHeaders.Authorization, "Bearer $agentKey")
         },
@@ -149,7 +146,7 @@ private suspend fun connectOnce() {
         ) {}
 
         server.registerService<Collector> { AgentCollector() }
-        println("kRPC collector connected to $serverHost:$serverPort$serverPath")
+        println("kRPC collector connected")
 
         try {
             closeReason.await()

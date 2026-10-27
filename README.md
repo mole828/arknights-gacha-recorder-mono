@@ -55,6 +55,8 @@ AGENT_KEY=local-development-key SERVER_HOST=localhost SERVER_PORT=8080 ./kotlin 
 
 Agent 主动连接后端的 `/agent/ws`（可通过 `SERVER_PATH` 修改），在连接上提供 kRPC `Collector` 服务。后端直接调用 `validate(token)`、`collect(token)` 并保存结果；不再维护任务消息和结果消息。`AGENT_KEY` 通过 WebSocket 握手的 Bearer header 验证。kRPC 版本为 **0.10.4**，与 Kotlin 版本一起固定在公共模板。
 
+通过 HTTPS 代理部署时，设置 `SERVER_URL=wss://your-host/ws/agent/ws`，它会覆盖 `SERVER_HOST`、`SERVER_PORT` 和 `SERVER_PATH`。
+
 前端在 `webui` 目录运行 `npm ci && npm run dev`，访问 `http://127.0.0.1:5173`。开发代理把 `/api/ark/*` 转发到 `http://localhost:8080` 并移除前缀。修改 Kotlin 代码后重新运行 `npm run compile:kotlin`，Vite 会加载更新后的产物。
 
 ## 部署
