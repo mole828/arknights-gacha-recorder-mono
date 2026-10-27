@@ -1,0 +1,10 @@
+{
+    "configurations": [
+        {
+            "type": "gradle",
+            "name": "dev server",
+            "tasks": [":jsBrowserDevelopmentRun"],
+            "args": ["-t"]
+        }
+    ]
+}
