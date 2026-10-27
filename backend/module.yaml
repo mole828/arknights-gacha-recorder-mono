@@ -21,3 +21,7 @@ dependencies:
   - io.github.smyrgeorge:sqlx4k-postgres:1.11.0
   - io.github.smyrgeorge:log4k:2.1.1
   - io.github.smyrgeorge:log4k-classic:2.1.1
+
+test-dependencies@jvm:
+  - io.ktor:ktor-server-test-host
+  - io.ktor:ktor-client-websockets

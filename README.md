@@ -4,7 +4,7 @@
 
 | 模块 | 职责 |
 | --- | --- |
-| `modeling` | 公共数据模型、Agent 通信协议与兼容性测试 |
+| `modeling` | 公共数据模型、kRPC 采集接口与测试 |
 | `backend` | Ktor 接口、任务调度和 PostgreSQL 存储 |
 | `agent` | 执行鹰角接口采集任务的 JVM 应用 |
 | `webui` | Kotlin/JS、React、Ant Design 页面 |
@@ -30,6 +30,8 @@ npm run build
 ./scripts/package-native.sh macosArm64 debug
 ```
 
+前端通过官方 wrappers BOM **2026.10.5** 对齐依赖，React 与 React DOM 使用 **19.3.1**。
+
 ## 本地运行
 
 准备 PostgreSQL，在仓库根目录启动后端：
@@ -51,7 +53,7 @@ export OPEN_LOOP=false
 AGENT_KEY=local-development-key SERVER_HOST=localhost SERVER_PORT=8080 ./kotlin run -m agent
 ```
 
-默认 WebSocket 路径为 `/agent/ws`，可通过 `SERVER_PATH` 修改。
+Agent 主动连接后端的 `/agent/ws`（可通过 `SERVER_PATH` 修改），在连接上提供 kRPC `Collector` 服务。后端直接调用 `validate(token)`、`collect(token)` 并保存结果；不再维护任务消息和结果消息。`AGENT_KEY` 通过 WebSocket 握手的 Bearer header 验证。kRPC 版本为 **0.10.4**，与 Kotlin 版本一起固定在公共模板。
 
 前端在 `webui` 目录运行 `npm ci && npm run dev`，访问 `http://127.0.0.1:5173`。开发代理把 `/api/ark/*` 转发到 `http://localhost:8080` 并移除前缀。修改 Kotlin 代码后重新运行 `npm run compile:kotlin`，Vite 会加载更新后的产物。
 

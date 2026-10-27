@@ -26,6 +26,7 @@ import top.moles.ui.SelectOption
 import top.moles.ui.ark.*
 import web.cssom.*
 import web.window.WindowTarget
+import web.window._blank
 import kotlin.text.Typography.nbsp
 
 

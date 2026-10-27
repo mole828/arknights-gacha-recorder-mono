@@ -4,3 +4,9 @@ product:
 
 apply:
   - //common.module-template.yaml
+
+dependencies:
+  - io.ktor:ktor-websockets: exported
+  - org.jetbrains.kotlinx:kotlinx-rpc-krpc-client: exported
+  - org.jetbrains.kotlinx:kotlinx-rpc-krpc-server: exported
+  - org.jetbrains.kotlinx:kotlinx-rpc-krpc-serialization-json: exported

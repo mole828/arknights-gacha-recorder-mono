@@ -1,34 +1,87 @@
 package com.example.controller
 
-import agent.Agent
-import agent.WebSocketAgent
 import api.ArkNights
-import api.Uid
 import com.example.service.GachaRecorder
 import io.github.smyrgeorge.log4k.Logger
-import io.github.smyrgeorge.log4k.classic.info
-import io.ktor.server.request.receiveText
+import io.github.smyrgeorge.log4k.classic.error
+import io.ktor.http.HttpHeaders
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
-import io.ktor.server.routing.post
+import io.ktor.websocket.close
 import io.ktor.server.websocket.webSocket
-import kotlinx.coroutines.async
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import protocol.AgentAccountInfo
-import protocol.AgentGachaInfo
-import protocol.AgentHgToken
-import protocol.MessageTemplate
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.rpc.krpc.client.InitializedKrpcClient
+import kotlinx.rpc.krpc.rpcClientConfig
+import kotlinx.rpc.krpc.serialization.json.json
+import kotlinx.rpc.withService
+import rpc.AgentAccountInfo
+import rpc.Collector
+import rpc.CollectorResult
+import rpc.asKrpcTransport
 import kotlin.time.Duration.Companion.minutes
 
-private fun AgentHgToken.toApi() = ArkNights.HgToken(content)
+class Agents(private val recorder: GachaRecorder) {
+    private val connected = MutableStateFlow<Set<Collector>>(emptySet())
+    private val pending = ArrayDeque<String>()
+    private val queue = Mutex()
+    private val log = Logger.of("Agents")
 
-private fun ArkNights.HgToken.toProtocol() = AgentHgToken(content)
+    val count: Int get() = connected.value.size
+    fun available(): Collector? = connected.value.randomOrNull()
 
-private fun AgentAccountInfo.toApi() = ArkNights.AccountInfo(
+    suspend fun run(agent: Collector) {
+        connected.update { it + agent }
+        try {
+            while (currentCoroutineContext().isActive) {
+                try {
+                    val token = queue.withLock {
+                        if (pending.isEmpty()) pending.addAll(recorder.activeTasks().shuffled().map { it.hgToken.content })
+                        pending.removeFirstOrNull()
+                    }
+                    if (token != null) collect(agent, token)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    log.error("采集失败", e)
+                }
+                delay(2.minutes)
+            }
+        } finally {
+            connected.update { it - agent }
+        }
+    }
+
+    suspend fun collect(agent: Collector, token: String) {
+        val hgToken = ArkNights.HgToken(token)
+        when (val result = agent.collect(token)) {
+            is CollectorResult.Success -> {
+                recorder.upsert(result.account.toApi(), hgToken)
+                recorder.record(result.gachas.map {
+                    ArkNights.GachaApi.Gacha.from(result.account.uid, ArkNights.GachaApi.GachaInfo.Companion.DefaultImpl(
+                        charId = it.charId, charName = it.charName, gachaTs = it.gachaTs,
+                        isNew = it.isNew, poolId = it.poolId, poolName = it.poolName,
+                        pos = it.pos, rarity = it.rarity,
+                    ))
+                })
+                recorder.setTokenExpired(hgToken, false)
+            }
+            CollectorResult.Expired, is CollectorResult.Invalid -> recorder.setTokenExpired(hgToken, true)
+        }
+    }
+}
+
+internal fun AgentAccountInfo.toApi() = ArkNights.AccountInfo(
     channelMasterId = channelMasterId,
     channelName = channelName,
     isDefault = isDefault,
@@ -38,126 +91,24 @@ private fun AgentAccountInfo.toApi() = ArkNights.AccountInfo(
     uid = uid,
 )
 
-private fun AgentGachaInfo.toApi() = ArkNights.GachaApi.GachaInfo.Companion.DefaultImpl(
-    charId = charId,
-    charName = charName,
-    gachaTs = gachaTs,
-    isNew = isNew,
-    poolId = poolId,
-    poolName = poolName,
-    pos = pos,
-    rarity = rarity,
-)
-
-fun Routing.agentPart(
-    agentKey: String,
-    service: GachaRecorder,
-    delayTime: kotlin.time.Duration = 2.minutes
-): Pair<MutableList<Agent>, MutableList<MessageTemplate.Task>> {
-    val log = Logger.of("AgentRoute")
-
-    log.info("agentKey: $agentKey")
-    log.info("delayTime: $delayTime")
-
-    val agentList = mutableListOf<Agent>()
-    get("/agent/status") {
-        call.respond(agentList)
-    }
-
-    val taskList = mutableListOf<MessageTemplate.Task>()
-    suspend fun getTask(): MessageTemplate.Task {
-        if (taskList.isEmpty()) {
-            log.info("reload taskList")
-            service.activeTasks().forEach {
-                taskList.add(MessageTemplate.Task(uid = it.uid, hgToken = it.hgToken.toProtocol()))
-            }
-            taskList.shuffle()
-        }
-        return taskList.removeFirst()
-    }
-
-    get("/agent/task") {
-        val key = call.parameters["agentKey"]
-        requireNotNull(key)
-        require(agentKey == key)
-        call.respond(getTask())
-    }
-
-    @Serializable
-    data class TaskResult(
-        val uid: Uid,
-        val hgToken: ArkNights.HgToken,
-        val gachas: List<ArkNights.GachaApi.GachaInfo.Companion.DefaultImpl>,
-        val expired: Boolean? = false,
-    )
-
-    post("/agent/task") {
-        val key = call.parameters["agentKey"]
-        requireNotNull(key)
-        require(agentKey == key)
-
-        val result = Json.decodeFromString<TaskResult>(call.receiveText())
-        if (result.expired == true) {
-            service.setTokenExpired(result.hgToken, true)
-        }
-
-        log.info("agent 更新用户数据, total: ${result.gachas.size}")
-        service.record(result.gachas.map {
-            ArkNights.GachaApi.Gacha.from(
-                uid = result.uid,
-                gachaInfo = it,
-            )
-        })
-        call.respond(mapOf("msg" to "ok"))
-    }
+fun Routing.agentPart(agentKey: String, agents: Agents) {
+    get("/agent/status") { call.respond(mapOf("connected" to agents.count)) }
 
     webSocket("/agent/ws") {
-        val agent = WebSocketAgent(this)
-        agent.waitAuth(agentKey)
-        agentList.add(agent)
-
-        val fn: suspend (MessageTemplate) -> Unit = { msg ->
-            log.info("收到消息: ${msg.toString().take(20)}")
-            when (msg) {
-                is MessageTemplate.TaskResult -> {
-                    log.info("收到任务结果 ${msg.uid}, 共计 ${msg.result.size} 条")
-                    launch {
-                        log.info("代理人延迟 ${delayTime.inWholeMinutes} 分钟")
-                        delay(delayTime)
-                        val task = getTask()
-                        agent.send(MessageTemplate.Task(hgToken = task.hgToken, uid = task.uid))
-                    }
-                    async {
-                        val hasRecord = service.record(
-                            msg.result.map {
-                                ArkNights.GachaApi.Gacha.from(uid = msg.uid, gachaInfo = it.toApi())
-                            }
-                        )
-                        log.info("完成记录 $hasRecord 条")
-                        service.setTokenExpired(msg.hgToken.toApi(), false)
-                        log.info("重制 hgToken 过期状态, 准备开启延迟进程")
-                    }.await()
-                }
-
-                is MessageTemplate.Expired -> {
-                    service.setTokenExpired(msg.hgToken.toApi(), true)
-                }
-
-                is MessageTemplate.UserInfo -> {
-                    log.info("更新用户信息: ${msg.info}")
-                    service.upsert(msg.info.toApi(), msg.hgToken.toApi())
-                }
-
-                else -> {}
-            }
+        if (call.request.headers[HttpHeaders.Authorization] != "Bearer $agentKey") {
+            close(io.ktor.websocket.CloseReason(io.ktor.websocket.CloseReason.Codes.VIOLATED_POLICY, "Unauthorized"))
+            return@webSocket
         }
-
-        agent.onMessageActions.add(fn)
-        log.info("开始派发任务")
-        agent.send(getTask().let { MessageTemplate.Task(hgToken = it.hgToken, uid = it.uid) })
-        agent.reading.await()
-        agentList.remove(agent)
+        val client = object : InitializedKrpcClient(
+            rpcClientConfig { serialization { json() } }, asKrpcTransport(),
+        ) {}
+        try {
+            coroutineScope {
+                val worker = launch { agents.run(client.withService<Collector>()) }
+                try { closeReason.await() } finally { worker.cancelAndJoin() }
+            }
+        } finally {
+            client.close()
+        }
     }
-
-    return agentList to taskList
 }
