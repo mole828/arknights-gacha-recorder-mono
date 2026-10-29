@@ -52,3 +52,14 @@ data class User(
     val uid: Uid,
     val nickName: String,
 )
+
+/** Zero-based page request; the offset must fit the database's signed bigint. */
+data class GachaPageRequest(val page: Long = 0, val pageSize: Int = 10) {
+    init {
+        require(page >= 0) { "page must be non-negative" }
+        require(pageSize > 0) { "pageSize must be positive" }
+        require(page <= Long.MAX_VALUE / pageSize) { "page offset is too large" }
+    }
+
+    val offset: Long get() = page * pageSize
+}

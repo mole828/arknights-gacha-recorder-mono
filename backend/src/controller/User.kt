@@ -10,7 +10,6 @@ import io.ktor.server.application.application
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytesWriter
-import io.ktor.server.response.respondText
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -35,7 +34,7 @@ fun Routing.userPart(service: GachaRecorder, agents: Agents) {
     get("/gachas") {
         val page = call.queryParameters["page"]?.toLong() ?: 0
         val response = service.gachaPage(call.queryParameters["uid"], page, pageSize = 10)
-        call.respondText(Json.encodeToString(response), ContentType.Application.Json)
+        call.respond(response)
     }
 
     post("/register") {

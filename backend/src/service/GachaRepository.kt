@@ -14,6 +14,7 @@ import io.github.smyrgeorge.sqlx4k.postgres.postgreSQL
 import model.Char
 import model.Draw
 import model.GachasResponse
+import model.GachaPageRequest
 import model.GachasResponseData
 import model.Pagination
 
@@ -160,7 +161,7 @@ class SqlxGachaRepository(private val db: IPostgresSQL) : GachaRepository {
             .map { it.toAccountInfo() }
 
     override suspend fun gachaPage(uid: Uid?, page: Long, pageSize: Int): GachasResponse {
-        val offset = page * pageSize
+        val offset = GachaPageRequest(page, pageSize).offset
         val whereSql = if (uid == null) "" else "where g.uid = :uid"
 
         fun Statement.bindUidIfNeeded(): Statement =

@@ -64,6 +64,33 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class AgentRpcIntegrationTest {
     @Test
+    fun invalidPagesReturnBadRequest() = testApplication {
+        application {
+            install(ContentNegotiation) { json() }
+            configureRouting(GachaRecorder(RecordingRepository()), AGENT_KEY)
+        }
+        for (page in listOf("-1", "not-a-number", Long.MAX_VALUE.toString())) {
+            assertEquals(HttpStatusCode.BadRequest, client.get("/gachas?page=$page").status)
+        }
+        assertEquals(HttpStatusCode.OK, client.get("/gachas?page=0").status)
+    }
+
+    @Test
+    fun emptyCollectionRoundWaitsAndCanBeCancelled() = runBlocking {
+        var rounds = 0
+        val repository = RecordingRepository(beforeActiveTokens = { rounds++ })
+        val recorder = GachaRecorder(repository)
+        val loop = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            recorder.mainLoop { 60.seconds }
+        }
+        try {
+            assertEquals(1, rounds)
+        } finally {
+            loop.cancelAndJoin()
+        }
+    }
+
+    @Test
     fun registrationSendsHeadersBeforeValidationAndReturnsBeforeBackgroundSave() = runBlocking {
         val allowValidation = CompletableDeferred<Unit>()
         val saving = CompletableDeferred<Unit>()
@@ -357,6 +384,7 @@ private data class Upsert(val account: ArkNights.AccountInfo, val hgToken: ArkNi
 
 private class RecordingRepository(
     private val beforeRecord: suspend () -> Unit = {},
+    private val beforeActiveTokens: () -> Unit = {},
 ) : GachaRepository {
     val upserts = Channel<Upsert>(Channel.UNLIMITED)
     val gachas = Channel<ArkNights.GachaApi.Gacha>(Channel.UNLIMITED)
@@ -372,7 +400,10 @@ private class RecordingRepository(
     override suspend fun setTokenExpired(hgToken: ArkNights.HgToken, expired: Boolean) {
         expiryUpdates.send(hgToken to expired)
     }
-    override suspend fun activeTokens(): List<UserToken> = emptyList()
+    override suspend fun activeTokens(): List<UserToken> {
+        beforeActiveTokens()
+        return emptyList()
+    }
     override suspend fun users(): List<ArkNights.AccountInfo> = emptyList()
     override suspend fun expiredUsers(): List<ArkNights.AccountInfo> = emptyList()
     override suspend fun gachaPage(uid: model.Uid?, page: Long, pageSize: Int): GachasResponse =

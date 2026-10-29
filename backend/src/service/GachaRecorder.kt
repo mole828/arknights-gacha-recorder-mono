@@ -6,12 +6,14 @@ import io.github.smyrgeorge.log4k.Logger
 import io.github.smyrgeorge.log4k.classic.debug
 import io.github.smyrgeorge.log4k.classic.error
 import io.github.smyrgeorge.log4k.classic.info
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import model.GachaPageRequest
 import model.GachasResponse
 import kotlin.time.Clock
 import kotlin.time.Duration
@@ -62,8 +64,10 @@ class GachaRecorder(
 
     suspend fun activeTasks(): List<UserToken> = repository.activeTokens()
 
-    suspend fun gachaPage(uid: Uid?, page: Long, pageSize: Int): GachasResponse =
-        repository.gachaPage(uid, page, pageSize)
+    suspend fun gachaPage(uid: Uid?, page: Long, pageSize: Int): GachasResponse {
+        val request = GachaPageRequest(page, pageSize)
+        return repository.gachaPage(uid, request.page, request.pageSize)
+    }
 
     suspend fun record(gacha: ArkNights.GachaApi.Gacha): UInt = repository.record(gacha)
 
@@ -138,12 +142,18 @@ class GachaRecorder(
             logger.info("开始抓取用户数据")
 
             val hgTokenMap = repository.activeTokens().shuffled()
+            if (hgTokenMap.isEmpty()) {
+                delay(delayTime())
+                continue
+            }
             var total = 0u
             hgTokenMap.forEach { token ->
                 logger.info("更新用户数据, nickName: ${token.nickName ?: token.uid}")
                 val result = try {
                     updateGacha(token.hgToken)
-                } catch (e: Throwable) {
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
                     logger.error("更新用户数据失败", e)
                     0u
                 }

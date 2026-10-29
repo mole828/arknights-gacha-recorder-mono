@@ -2,6 +2,8 @@ package com.example
 
 import com.example.service.GachaRecorder
 import com.example.service.createGachaRepository
+import io.ktor.server.application.ApplicationStopped
+import kotlinx.coroutines.cancel
 import io.ktor.server.application.ServerReady
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -28,6 +30,7 @@ fun Application.module() {
         username = requireNotNull(env("DATABASE_USER")),
         password = requireNotNull(env("DATABASE_PASSWORD")),
     ))
+    monitor.subscribe(ApplicationStopped) { service.scope.cancel() }
     runBlocking { service.init() }
     if (env("OPEN_LOOP").toBoolean()) {
         monitor.subscribe(ServerReady) { service.scope.launch { service.mainLoop() } }
