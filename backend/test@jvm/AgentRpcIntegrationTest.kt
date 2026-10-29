@@ -64,7 +64,7 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class AgentRpcIntegrationTest {
     @Test
-    fun registrationSendsHeadersBeforeRpcAndBodyOnlyAfterPersistence() = runBlocking {
+    fun registrationSendsHeadersBeforeValidationAndReturnsBeforeBackgroundSave() = runBlocking {
         val allowValidation = CompletableDeferred<Unit>()
         val saving = CompletableDeferred<Unit>()
         val allowSave = CompletableDeferred<Unit>()
@@ -112,9 +112,10 @@ class AgentRpcIntegrationTest {
                 allowValidation.complete(Unit)
 
                 saving.await()
-                assertFalse(body.isCompleted)
+                assertEquals(RegisterResponse("记录成功，后续会陆续补全", account(token).uid), body.await())
+                assertTrue(repository.gachas.tryReceive().isFailure)
                 allowSave.complete(Unit)
-                assertEquals(RegisterResponse("提交成功", account(token).uid), body.await())
+                assertEquals(account(token).uid, repository.gachas.receiveWithin().uid)
                 assertEquals(ArkNights.HgToken(token) to false, repository.expiryUpdates.receiveWithin())
                 connection.job.cancelAndJoin()
             }
@@ -145,7 +146,7 @@ class AgentRpcIntegrationTest {
 
                 val pasted = Json.encodeToString(ArkNights.HgTokenResponse(0, ArkNights.HgToken(token), "ok"))
                 val response = client.register("  $pasted  ")
-                assertEquals("提交成功", responseMessage(response))
+                assertEquals("记录成功，后续会陆续补全", responseMessage(response))
                 assertEquals(account.uid, Json.decodeFromString<RegisterResponse>(response).uid)
                 assertEquals(setOf("msg", "uid"), Json.parseToJsonElement(response).jsonObject.keys)
                 assertEquals(token, collector.validatedTokens.receiveWithin())
@@ -198,7 +199,7 @@ class AgentRpcIntegrationTest {
                 val responses = tokens.map { token ->
                     async { client.register(token) }
                 }.awaitAll()
-                assertTrue(responses.all { responseMessage(it) == "提交成功" })
+                assertTrue(responses.all { responseMessage(it) == "记录成功，后续会陆续补全" })
                 assertEquals(tokens.sorted(), List(2) { collector.validatedTokens.receiveWithin() }.sorted())
                 assertEquals(tokens.sorted(), List(2) { collector.collectedTokens.receiveWithin() }.sorted())
 
@@ -254,8 +255,12 @@ class AgentRpcIntegrationTest {
     }
 
     @Test
-    fun collectionFailuresReturnBusinessErrorsWithoutSuccessUid() = testApplication {
-        val repository = RecordingRepository(beforeRecord = { error("simulated database failure") })
+    fun backgroundCollectionFailuresDoNotFailRegistration() = testApplication {
+        val saveAttempted = CompletableDeferred<Unit>()
+        val repository = RecordingRepository(beforeRecord = {
+            saveAttempted.complete(Unit)
+            error("simulated database failure")
+        })
         val collector = TestCollector(
             validateResult = { CollectorResult.Success(account(it)) },
             collectResult = { token ->
@@ -273,14 +278,16 @@ class AgentRpcIntegrationTest {
                 val connection = startAgent(agentClient, AGENT_KEY, collector)
                 connection.ready.await()
                 awaitConnected(client, 1)
-                for ((token, message) in listOf(
-                    "expired" to "HgToken 已过期",
-                    "invalid" to "HgToken 无效",
-                    "save-failed" to "采集失败，请稍后重试",
-                )) {
-                    assertEquals(RegisterResponse(message),
+                for (token in listOf("expired", "invalid", "save-failed")) {
+                    assertEquals(RegisterResponse("记录成功，后续会陆续补全", account(token).uid),
                         Json.decodeFromString<RegisterResponse>(client.register(token)))
                 }
+                withTimeout(3.seconds) { saveAttempted.await() }
+                assertEquals(setOf("expired", "invalid", "save-failed"),
+                    List(3) { collector.collectedTokens.receiveWithin() }.toSet())
+                val expiredTokens = List(2) { repository.expiryUpdates.receiveWithin() }
+                assertTrue(expiredTokens.all { it.second })
+                assertEquals(setOf("expired", "invalid"), expiredTokens.map { it.first.content }.toSet())
                 assertTrue(repository.gachas.tryReceive().isFailure)
                 connection.job.cancelAndJoin()
             }

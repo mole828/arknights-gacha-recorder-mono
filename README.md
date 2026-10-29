@@ -59,7 +59,7 @@ Agent 主动连接后端的 `/agent/ws`（可通过 `SERVER_PATH` 修改），�
 
 前端在 `webui` 目录运行 `npm ci && npm run dev`，访问 `http://127.0.0.1:5173`。开发代理把 `/api/ark/*` 转发到 `http://localhost:8080` 并移除前缀。修改 Kotlin 代码后重新运行 `npm run compile:kotlin`，Vite 会加载更新后的产物。
 
-注册使用 `POST /register`，以 `application/json` 请求体传递 `{"token":"..."}`；token 字段仍可填写从官网复制的完整 JSON。后端解析请求后先发送 HTTP 200 和响应头，随后等待 Agent 验证、采集并保存，最后发送 JSON 响应体。成功返回 `{"msg":"提交成功","uid":"..."}`，失败返回 `msg` 且不包含 UID，因此 HTTP 200 本身不表示采集成功。前端等待期间显示加载状态，成功后选中该账号，复用 `/users` 与 `/gachas` 接口刷新列表，不轮询采集任务。
+注册使用 `POST /register`，以 `application/json` 请求体传递 `{"token":"..."}`；token 字段仍可填写从官网复制的完整 JSON。后端解析请求后先发送 HTTP 200 和响应头，等待 Agent 验证 token 并保存账号后，立即返回 `{"msg":"记录成功，后续会陆续补全","uid":"..."}`，采集在后台继续执行。验证失败返回 `msg` 且不包含 UID，因此 HTTP 200 本身不表示记录成功。前端等待期间显示验证提示，成功后选中该账号，复用 `/users` 与 `/gachas` 接口刷新一次列表；新采集的记录后续补全，不轮询采集任务。
 
 ## 部署
 

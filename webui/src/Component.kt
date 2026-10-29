@@ -85,7 +85,7 @@ val App = FC<Props> {
                         registrationMessage = "提交失败，请检查 token 后重试"
                         return@execute
                     }
-                    registrationMessage = "正在验证并采集记录，请稍候…"
+                    registrationMessage = "正在验证 token，请稍候…"
                     val result = json.decodeFromString<RegisterResponse>(response.bodyAsText())
                     registrationMessage = result.msg
                     result.uid?.let { uid ->

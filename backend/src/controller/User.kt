@@ -6,6 +6,7 @@ import io.github.smyrgeorge.log4k.Logger
 import io.github.smyrgeorge.log4k.classic.error
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.application
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytesWriter
@@ -15,6 +16,8 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -48,12 +51,12 @@ fun Routing.userPart(service: GachaRecorder, agents: Agents) {
         // CIO sends the status and headers before running this body producer.
         call.respondBytesWriter(ContentType.Application.Json, HttpStatusCode.OK) {
             val response = try {
-                register(token, agent, service, agents)
+                register(token, agent, service, agents, call.application)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                registrationLogger.error("注册采集失败", e)
-                RegisterResponse("采集失败，请稍后重试")
+                registrationLogger.error("记录账号失败", e)
+                RegisterResponse("记录失败，请稍后重试")
             }
             writeStringUtf8(Json.encodeToString(response))
         }
@@ -65,17 +68,23 @@ private suspend fun register(
     agent: Collector?,
     service: GachaRecorder,
     agents: Agents,
+    scope: CoroutineScope,
 ): RegisterResponse {
     if (agent == null) return RegisterResponse("记录员未连接，请稍后重试")
 
     return when (val result = withTimeoutOrNull(10.seconds) { agent.validate(token) }) {
         is CollectorResult.Success -> {
             service.upsert(result.account.toApi(), ArkNights.HgToken(token))
-            when (val collection = agents.collect(agent, token)) {
-                is CollectorResult.Success -> RegisterResponse("提交成功", collection.account.uid)
-                CollectorResult.Expired -> RegisterResponse("HgToken 已过期")
-                is CollectorResult.Invalid -> RegisterResponse("HgToken 无效")
+            scope.launch {
+                try {
+                    agents.collect(agent, token)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    registrationLogger.error("后台采集失败", e)
+                }
             }
+            RegisterResponse("记录成功，后续会陆续补全", result.account.uid)
         }
         CollectorResult.Expired -> {
             service.setTokenExpired(ArkNights.HgToken(token), true)
