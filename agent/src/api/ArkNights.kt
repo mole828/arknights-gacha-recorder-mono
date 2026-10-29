@@ -294,7 +294,6 @@ interface ArkNights {
         suspend fun history(
             loginCookie: LoginCookie,
             u8Token: U8Token,
-            uid: Uid,
             pool: Pool,
             size: UInt,
             gachaTs: ULong? = null,
@@ -308,14 +307,12 @@ interface ArkNights {
                     override suspend fun history(
                         loginCookie: LoginCookie,
                         u8Token: U8Token,
-                        uid: Uid,
                         pool: Pool,
                         size: UInt,
                         gachaTs: ULong?,
                         pos: UInt?,
                     ): GachaListData {
                         val resp = ktorClient.get("https://ak.hypergryph.com/user/api/inquiry/gacha/history") {
-                            parameter("uid", uid)
                             parameter("category", pool.id)
                             parameter("size", size)
                             gachaTs?.let { parameter("gachaTs", it) }

@@ -99,7 +99,6 @@ private class AgentCollector : Collector {
             var history = gachaApi.history(
                 loginCookie = loginCookie,
                 u8Token = u8Token,
-                uid = uid,
                 pool = pool,
                 size = 10u,
             )
@@ -110,7 +109,6 @@ private class AgentCollector : Collector {
                 history = gachaApi.history(
                     loginCookie = loginCookie,
                     u8Token = u8Token,
-                    uid = uid,
                     pool = pool,
                     size = 10u,
                     gachaTs = lastGacha.gachaTs,

@@ -109,7 +109,7 @@ class GachaRecorder(
             val poolName = pool.name.replace("\n", "-")
             logger.debug("${account.nickName} loading $poolName history")
 
-            var history = gachaApi.history(loginCookie, u8Token, account.uid, pool, size = size)
+            var history = gachaApi.history(loginCookie, u8Token, pool, size = size)
             while (true) {
                 waitInsert.addAll(history.list.map { ArkNights.GachaApi.Gacha.from(account.uid, it) })
 
@@ -121,7 +121,6 @@ class GachaRecorder(
                 history = gachaApi.history(
                     loginCookie = loginCookie,
                     u8Token = u8Token,
-                    uid = account.uid,
                     pool = pool,
                     size = size,
                     gachaTs = last.gachaTs,
