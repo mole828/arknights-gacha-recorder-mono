@@ -18,7 +18,6 @@ import kotlinx.rpc.registerService
 import kotlinx.rpc.krpc.rpcServerConfig
 import kotlinx.rpc.krpc.serialization.json.json
 import kotlinx.rpc.krpc.server.KrpcServer
-import rpc.AgentGachaInfo
 import rpc.Collector
 import rpc.CollectorResult
 import rpc.asKrpcTransport
@@ -56,9 +55,7 @@ private suspend fun resolveAccount(token: String): AccountContext {
     val hgToken = HgToken(token)
     val appToken = api.grantAppToken(hgToken)
     val account = api.bindingList(appToken).list
-        .asSequence()
-        .flatMap { it.bindingList.asSequence() }
-        .firstOrNull()
+        .firstNotNullOfOrNull { it.bindingList.firstOrNull() }
         ?: throw ArkNights.HgTokenInvalid(hgToken, "没有找到绑定账号")
 
     return AccountContext(appToken, account)
@@ -75,40 +72,30 @@ private class AgentCollector : Collector {
     }
 
     override suspend fun collect(token: String): CollectorResult = try {
-        val accountContext = resolveAccount(token)
-        val uid = accountContext.account.uid
-        val u8Token = api.u8TokenByUid(accountContext.appToken, uid)
+        val (appToken, account) = resolveAccount(token)
+        val u8Token = api.u8TokenByUid(appToken, account.uid)
         val loginCookie = api.login(u8Token)
-        val pools = api.poolList(uid, u8Token, loginCookie)
-        val gachas = mutableListOf<AgentGachaInfo>()
+        val pools = api.poolList(account.uid, u8Token, loginCookie)
+        val gachas = buildList {
+            for (pool in pools) {
+                var history = api.history(loginCookie, u8Token, pool, size = 10u)
+                while (true) {
+                    addAll(history.list)
+                    if (!history.hasMore) break
 
-        for (pool in pools) {
-            var history = api.history(
-                loginCookie = loginCookie,
-                u8Token = u8Token,
-                pool = pool,
-                size = 10u,
-            )
-            gachas.addAll(history.list)
-
-            while (history.hasMore) {
-                val lastGacha = history.list.lastOrNull() ?: break
-                history = api.history(
-                    loginCookie = loginCookie,
-                    u8Token = u8Token,
-                    pool = pool,
-                    size = 10u,
-                    gachaTs = lastGacha.gachaTs,
-                    pos = lastGacha.pos,
-                )
-                gachas.addAll(history.list)
+                    val lastGacha = history.list.lastOrNull() ?: break
+                    history = api.history(
+                        loginCookie = loginCookie,
+                        u8Token = u8Token,
+                        pool = pool,
+                        size = 10u,
+                        gachaTs = lastGacha.gachaTs,
+                        pos = lastGacha.pos,
+                    )
+                }
             }
         }
-
-        CollectorResult.Success(
-            account = accountContext.account,
-            gachas = gachas,
-        )
+        CollectorResult.Success(account = account, gachas = gachas)
     } catch (_: ArkNights.HgTokenExpired) {
         CollectorResult.Expired
     } catch (e: ArkNights.HgTokenInvalid) {

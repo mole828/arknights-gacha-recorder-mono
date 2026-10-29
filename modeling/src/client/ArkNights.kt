@@ -34,7 +34,11 @@ class ArkNights(private val http: HttpClient) {
     suspend fun grantAppToken(hgToken: HgToken): AppToken {
         val response = http.post("https://as.hypergryph.com/user/oauth2/v2/grant") {
             headers { append(HttpHeaders.ContentType, ContentType.Application.Json.toString()) }
-            setBody(json.encodeToString(GrantAppTokenPayload("be36d44aa36bfb5b", hgToken.content, 1)))
+            setBody(json.encodeToString(GrantAppTokenPayload(
+                appCode = "be36d44aa36bfb5b",
+                token = hgToken.content,
+                type = 1,
+            )))
         }
         val body = response.bodyAsText()
         if ("Error" in body) throw HgTokenInvalid(hgToken)

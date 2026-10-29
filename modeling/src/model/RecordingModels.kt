@@ -1,6 +1,7 @@
 package model
 
 import kotlinx.serialization.Serializable
+import rpc.AgentGachaInfo
 
 @Serializable
 data class HgToken(val content: String)
@@ -32,4 +33,16 @@ data class GachaRecord(
     val poolName: String,
     val rarity: UInt,
     val isNew: Boolean,
+)
+
+fun AgentGachaInfo.toRecord(uid: Uid): GachaRecord = GachaRecord(
+    uid = uid,
+    gachaTs = gachaTs,
+    pos = pos,
+    charId = charId,
+    charName = charName,
+    poolId = poolId,
+    poolName = poolName,
+    rarity = rarity,
+    isNew = isNew,
 )

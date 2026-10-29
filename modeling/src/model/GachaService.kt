@@ -39,15 +39,7 @@ class GachaService(private val repository: GachaRepository) {
         when (result) {
             is CollectorResult.Success -> {
                 repository.upsertUser(result.account, hgToken)
-                record(result.gachas.map {
-                    GachaRecord(
-                        uid = result.account.uid,
-                        gachaTs = it.gachaTs, pos = it.pos,
-                        charId = it.charId, charName = it.charName,
-                        poolId = it.poolId, poolName = it.poolName,
-                        rarity = it.rarity, isNew = it.isNew,
-                    )
-                })
+                record(result.gachas.map { it.toRecord(result.account.uid) })
                 repository.setTokenExpired(hgToken, false)
             }
             CollectorResult.Expired, is CollectorResult.Invalid -> repository.setTokenExpired(hgToken, true)
@@ -55,11 +47,8 @@ class GachaService(private val repository: GachaRepository) {
         return result
     }
 
-    suspend fun record(records: List<GachaRecord>): UInt {
-        var total = 0u
-        for (record in records) total += repository.record(record)
-        return total
-    }
+    suspend fun record(records: List<GachaRecord>): UInt =
+        records.sumOf { repository.record(it) }
 }
 
 /** Accept either a token or the complete JSON copied from the account page. */

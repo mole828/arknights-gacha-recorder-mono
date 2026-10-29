@@ -20,6 +20,7 @@ import model.GachaRecord
 import model.GachaRepository
 import model.GachaService
 import model.HgToken
+import model.toRecord
 
 class GachaRecorder(
     private val repository: GachaRepository,
@@ -66,18 +67,13 @@ class GachaRecorder(
         val poolList = arkCenterApi.poolList(account.uid, u8Token, loginCookie)
 
         val waitInsert = mutableListOf<GachaRecord>()
-        poolList.forEach { pool ->
+        for (pool in poolList) {
             val poolName = pool.name.replace("\n", "-")
             logger.debug("${account.nickName} loading $poolName history")
 
             var history = arkCenterApi.history(loginCookie, u8Token, pool, size = size)
             while (true) {
-                waitInsert.addAll(history.list.map { GachaRecord(
-                    uid = account.uid, gachaTs = it.gachaTs, pos = it.pos,
-                    charId = it.charId, charName = it.charName,
-                    poolId = it.poolId, poolName = it.poolName,
-                    rarity = it.rarity, isNew = it.isNew,
-                ) })
+                waitInsert.addAll(history.list.map { it.toRecord(account.uid) })
 
                 if (!history.hasMore) break
                 delay(5.seconds)
@@ -103,13 +99,13 @@ class GachaRecorder(
             val roundBeginTime = Clock.System.now()
             logger.info("开始抓取用户数据")
 
-            val hgTokenMap = repository.activeTokens().shuffled()
-            if (hgTokenMap.isEmpty()) {
+            val tokens = repository.activeTokens().shuffled()
+            if (tokens.isEmpty()) {
                 delay(delayTime())
                 continue
             }
             var total = 0u
-            hgTokenMap.forEach { token ->
+            for (token in tokens) {
                 logger.info("更新用户数据, nickName: ${token.nickName ?: token.uid}")
                 val result = try {
                     updateGacha(token.hgToken)
