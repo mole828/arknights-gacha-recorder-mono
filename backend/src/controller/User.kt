@@ -1,7 +1,5 @@
 package com.example.controller
 
-import api.ArkNights
-import com.example.service.GachaRecorder
 import io.github.smyrgeorge.log4k.Logger
 import io.github.smyrgeorge.log4k.classic.error
 import io.ktor.http.ContentType
@@ -17,18 +15,17 @@ import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import model.GachaService
 import model.RegisterRequest
 import model.RegisterResponse
+import model.parseRegistrationToken
 import rpc.Collector
-import rpc.CollectorResult
-import kotlin.time.Duration.Companion.seconds
 
 private val registrationLogger = Logger.of("Registration")
 
-fun Routing.userPart(service: GachaRecorder, agents: Agents) {
+fun Routing.userPart(service: GachaService, agents: Agents) {
     get("/users") { call.respond(service.users()) }
     get("/users.invalid") { call.respond(service.expiredUsers().map { it.nickName }) }
     get("/gachas") {
@@ -38,19 +35,12 @@ fun Routing.userPart(service: GachaRecorder, agents: Agents) {
     }
 
     post("/register") {
-        val input = call.receive<RegisterRequest>().token.trim()
-        require(input.isNotEmpty()) { "token is required" }
-        val token = try {
-            Json.decodeFromString<ArkNights.HgTokenResponse>(input).data.content
-        } catch (_: IllegalArgumentException) {
-            input
-        }
-        require(token.isNotBlank()) { "token is required" }
+        val token = parseRegistrationToken(call.receive<RegisterRequest>().token)
         val agent = agents.available()
         // CIO sends the status and headers before running this body producer.
         call.respondBytesWriter(ContentType.Application.Json, HttpStatusCode.OK) {
             val response = try {
-                register(token, agent, service, agents, call.application)
+                register(token, agent, service, call.application)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -65,31 +55,20 @@ fun Routing.userPart(service: GachaRecorder, agents: Agents) {
 private suspend fun register(
     token: String,
     agent: Collector?,
-    service: GachaRecorder,
-    agents: Agents,
+    service: GachaService,
     scope: CoroutineScope,
 ): RegisterResponse {
-    if (agent == null) return RegisterResponse("记录员未连接，请稍后重试")
-
-    return when (val result = withTimeoutOrNull(10.seconds) { agent.validate(token) }) {
-        is CollectorResult.Success -> {
-            service.upsert(result.account.toApi(), ArkNights.HgToken(token))
-            scope.launch {
-                try {
-                    agents.collect(agent, token)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    registrationLogger.error("后台采集失败", e)
-                }
+    val response = service.register(token, agent)
+    if (response.uid != null && agent != null) {
+        scope.launch {
+            try {
+                service.collect(agent, token)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                registrationLogger.error("后台采集失败", e)
             }
-            RegisterResponse("记录成功，后续会陆续补全", result.account.uid)
         }
-        CollectorResult.Expired -> {
-            service.setTokenExpired(ArkNights.HgToken(token), true)
-            RegisterResponse("HgToken 已过期")
-        }
-        is CollectorResult.Invalid -> RegisterResponse("HgToken 无效")
-        null -> RegisterResponse("验证超时，请重试")
     }
+    return response
 }

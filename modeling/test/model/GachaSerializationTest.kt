@@ -7,6 +7,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class GachaSerializationTest {
+    @Test
+    fun sharedAccountKeepsExistingHttpAndRpcFields() {
+        val payload = """{"channelMasterId":1,"channelName":"官服","isDefault":true,"isDeleted":false,"isOfficial":true,"nickName":"Doctor","uid":"123"}"""
+        val account = AccountInfo(1, "官服", true, false, true, "Doctor", "123")
+        assertEquals(account, Json.decodeFromString<rpc.AgentAccountInfo>(payload))
+        assertEquals(payload, Json.encodeToString(account))
+    }
+
     private val json = Json
 
     @Test

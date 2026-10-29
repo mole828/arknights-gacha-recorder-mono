@@ -6,7 +6,12 @@ apply:
   - //common.module-template.yaml
 
 dependencies:
+  - io.ktor:ktor-client-core: exported
+  - org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0
   - io.ktor:ktor-websockets: exported
   - org.jetbrains.kotlinx:kotlinx-rpc-krpc-client: exported
   - org.jetbrains.kotlinx:kotlinx-rpc-krpc-server: exported
   - org.jetbrains.kotlinx:kotlinx-rpc-krpc-serialization-json: exported
+
+test-dependencies@jvm:
+  - io.ktor:ktor-client-mock

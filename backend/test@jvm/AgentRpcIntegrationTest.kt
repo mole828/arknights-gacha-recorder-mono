@@ -1,9 +1,8 @@
 package com.example
 
-import api.ArkNights
+import client.ArkNights
+import io.ktor.client.engine.mock.MockEngine
 import com.example.service.GachaRecorder
-import com.example.service.GachaRepository
-import com.example.service.UserToken
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO as ClientCIO
 import io.ktor.client.plugins.defaultRequest
@@ -11,12 +10,12 @@ import io.ktor.client.plugins.websocket.WebSockets
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.request.post
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
-import io.ktor.client.request.post
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.HttpHeaders
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
@@ -26,6 +25,11 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.testing.testApplication
 import io.ktor.websocket.CloseReason
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
@@ -37,37 +41,37 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
-import kotlinx.rpc.registerService
 import kotlinx.rpc.krpc.rpcServerConfig
 import kotlinx.rpc.krpc.serialization.json.json
 import kotlinx.rpc.krpc.server.KrpcServer
-import model.GachasResponse
-import model.GachasResponseData
-import model.Pagination
-import model.RegisterRequest
-import model.RegisterResponse
-import rpc.AgentAccountInfo
-import rpc.AgentGachaInfo
-import rpc.Collector
-import rpc.CollectorResult
-import rpc.asKrpcTransport
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
-import kotlin.time.Duration.Companion.seconds
+import kotlinx.rpc.registerService
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import model.AccountInfo
+import model.GachaRecord
+import model.GachaRepository
+import model.GachasResponse
+import model.GachasResponseData
+import model.HgToken
+import model.Pagination
+import model.RegisterRequest
+import model.RegisterResponse
+import model.UserToken
+import rpc.AgentAccountInfo
+import rpc.AgentGachaInfo
+import rpc.Collector
+import rpc.CollectorResult
+import rpc.asKrpcTransport
 
 class AgentRpcIntegrationTest {
     @Test
     fun invalidPagesReturnBadRequest() = testApplication {
         application {
             install(ContentNegotiation) { json() }
-            configureRouting(GachaRecorder(RecordingRepository()), AGENT_KEY)
+            configureRouting(testRecorder(RecordingRepository()), AGENT_KEY)
         }
         for (page in listOf("-1", "not-a-number", Long.MAX_VALUE.toString())) {
             assertEquals(HttpStatusCode.BadRequest, client.get("/gachas?page=$page").status)
@@ -79,7 +83,7 @@ class AgentRpcIntegrationTest {
     fun emptyCollectionRoundWaitsAndCanBeCancelled() = runBlocking {
         var rounds = 0
         val repository = RecordingRepository(beforeActiveTokens = { rounds++ })
-        val recorder = GachaRecorder(repository)
+        val recorder = testRecorder(repository)
         val loop = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
             recorder.mainLoop { 60.seconds }
         }
@@ -109,7 +113,7 @@ class AgentRpcIntegrationTest {
         )
         val server = embeddedServer(ServerCIO, host = "127.0.0.1", port = 0) {
             install(ContentNegotiation) { json() }
-            configureRouting(GachaRecorder(repository), AGENT_KEY)
+            configureRouting(testRecorder(repository), AGENT_KEY)
         }.start(wait = false)
         val port = server.engine.resolvedConnectors().single().port
         val http = HttpClient(ClientCIO) {
@@ -143,7 +147,7 @@ class AgentRpcIntegrationTest {
                 assertTrue(repository.gachas.tryReceive().isFailure)
                 allowSave.complete(Unit)
                 assertEquals(account(token).uid, repository.gachas.receiveWithin().uid)
-                assertEquals(ArkNights.HgToken(token) to false, repository.expiryUpdates.receiveWithin())
+                assertEquals(HgToken(token) to false, repository.expiryUpdates.receiveWithin())
                 connection.job.cancelAndJoin()
             }
         } finally {
@@ -161,7 +165,7 @@ class AgentRpcIntegrationTest {
             validateResult = { CollectorResult.Success(account) },
             collectResult = { CollectorResult.Success(account, listOf(gacha(token))) },
         )
-        val recorder = GachaRecorder(repository)
+        val recorder = testRecorder(repository)
         application { install(ContentNegotiation) { json() }; configureRouting(recorder, AGENT_KEY) }
         val agentClient = createClient { install(WebSockets) }
 
@@ -171,7 +175,7 @@ class AgentRpcIntegrationTest {
                 withTimeout(3.seconds) { connection.ready.await() }
                 awaitConnected(client, 1)
 
-                val pasted = Json.encodeToString(ArkNights.HgTokenResponse(0, ArkNights.HgToken(token), "ok"))
+                val pasted = """{"code":0,"data":{"content":"$token"},"msg":"ok"}"""
                 val response = client.register("  $pasted  ")
                 assertEquals("记录成功，后续会陆续补全", responseMessage(response))
                 assertEquals(account.uid, Json.decodeFromString<RegisterResponse>(response).uid)
@@ -190,7 +194,7 @@ class AgentRpcIntegrationTest {
                 assertEquals("pool-$token", stored.poolId)
                 assertEquals(2u, stored.pos)
                 assertEquals(6u, stored.rarity)
-                assertEquals(ArkNights.HgToken(token) to false, repository.expiryUpdates.receiveWithin())
+                assertEquals(HgToken(token) to false, repository.expiryUpdates.receiveWithin())
 
                 connection.job.cancelAndJoin()
                 awaitConnected(client, 0)
@@ -213,7 +217,7 @@ class AgentRpcIntegrationTest {
             },
             collectResult = { token -> CollectorResult.Success(account(token)) },
         )
-        application { install(ContentNegotiation) { json() }; configureRouting(GachaRecorder(repository), AGENT_KEY) }
+        application { install(ContentNegotiation) { json() }; configureRouting(testRecorder(repository), AGENT_KEY) }
         val agentClient = createClient { install(WebSockets) }
 
         try {
@@ -256,7 +260,7 @@ class AgentRpcIntegrationTest {
             },
             collectResult = { error("collect must not run for rejected registrations") },
         )
-        application { install(ContentNegotiation) { json() }; configureRouting(GachaRecorder(repository), AGENT_KEY) }
+        application { install(ContentNegotiation) { json() }; configureRouting(testRecorder(repository), AGENT_KEY) }
         val agentClient = createClient { install(WebSockets) }
 
         try {
@@ -298,7 +302,7 @@ class AgentRpcIntegrationTest {
                 }
             },
         )
-        application { install(ContentNegotiation) { json() }; configureRouting(GachaRecorder(repository), AGENT_KEY) }
+        application { install(ContentNegotiation) { json() }; configureRouting(testRecorder(repository), AGENT_KEY) }
         val agentClient = createClient { install(WebSockets) }
         try {
             coroutineScope {
@@ -326,7 +330,7 @@ class AgentRpcIntegrationTest {
     @Test
     fun rejectsWrongAgentKeyAndRemovesDisconnectedAgent() = testApplication {
         val repository = RecordingRepository()
-        application { install(ContentNegotiation) { json() }; configureRouting(GachaRecorder(repository), AGENT_KEY) }
+        application { install(ContentNegotiation) { json() }; configureRouting(testRecorder(repository), AGENT_KEY) }
         val agentClient = createClient { install(WebSockets) }
 
         try {
@@ -361,7 +365,7 @@ class AgentRpcIntegrationTest {
     fun registrationRejectsEmptyBodyTokenAndDoesNotAcceptQueryTokens() = testApplication {
         application {
             install(ContentNegotiation) { json() }
-            configureRouting(GachaRecorder(RecordingRepository()), AGENT_KEY)
+            configureRouting(testRecorder(RecordingRepository()), AGENT_KEY)
         }
         val blank = client.post("/register") {
             contentType(ContentType.Application.Json)
@@ -380,35 +384,34 @@ class AgentRpcIntegrationTest {
 
 private const val AGENT_KEY = "test-agent-key"
 
-private data class Upsert(val account: ArkNights.AccountInfo, val hgToken: ArkNights.HgToken)
+private data class Upsert(val account: AccountInfo, val hgToken: HgToken)
 
 private class RecordingRepository(
     private val beforeRecord: suspend () -> Unit = {},
     private val beforeActiveTokens: () -> Unit = {},
 ) : GachaRepository {
     val upserts = Channel<Upsert>(Channel.UNLIMITED)
-    val gachas = Channel<ArkNights.GachaApi.Gacha>(Channel.UNLIMITED)
-    val expiryUpdates = Channel<Pair<ArkNights.HgToken, Boolean>>(Channel.UNLIMITED)
+    val gachas = Channel<GachaRecord>(Channel.UNLIMITED)
+    val expiryUpdates = Channel<Pair<HgToken, Boolean>>(Channel.UNLIMITED)
 
-    override suspend fun initSchema() = Unit
-    override suspend fun upsertUser(accountInfo: ArkNights.AccountInfo, hgToken: ArkNights.HgToken) {
+    override suspend fun upsertUser(accountInfo: AccountInfo, hgToken: HgToken) {
         upserts.send(Upsert(accountInfo, hgToken))
     }
-    override suspend fun updateUser(accountInfo: ArkNights.AccountInfo) = Unit
+    override suspend fun updateUser(accountInfo: AccountInfo) = Unit
     override suspend fun expireUid(uid: model.Uid) = Unit
-    override suspend fun expireToken(hgToken: ArkNights.HgToken) = Unit
-    override suspend fun setTokenExpired(hgToken: ArkNights.HgToken, expired: Boolean) {
+    override suspend fun expireToken(hgToken: HgToken) = Unit
+    override suspend fun setTokenExpired(hgToken: HgToken, expired: Boolean) {
         expiryUpdates.send(hgToken to expired)
     }
     override suspend fun activeTokens(): List<UserToken> {
         beforeActiveTokens()
         return emptyList()
     }
-    override suspend fun users(): List<ArkNights.AccountInfo> = emptyList()
-    override suspend fun expiredUsers(): List<ArkNights.AccountInfo> = emptyList()
+    override suspend fun users(): List<AccountInfo> = emptyList()
+    override suspend fun expiredUsers(): List<AccountInfo> = emptyList()
     override suspend fun gachaPage(uid: model.Uid?, page: Long, pageSize: Int): GachasResponse =
         GachasResponse(GachasResponseData(emptyList(), Pagination(0uL, pageSize, 0uL)))
-    override suspend fun record(gacha: ArkNights.GachaApi.Gacha): UInt {
+    override suspend fun record(gacha: GachaRecord): UInt {
         beforeRecord()
         gachas.send(gacha)
         return 1u
@@ -499,3 +502,6 @@ private suspend fun HttpClient.register(token: String): String =
         contentType(ContentType.Application.Json)
         setBody(Json.encodeToString(RegisterRequest(token)))
     }.bodyAsText()
+
+private fun testRecorder(repository: GachaRepository): GachaRecorder =
+    GachaRecorder(repository, ArkNights(HttpClient(MockEngine { error("unexpected external API request") })))

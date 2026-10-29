@@ -24,16 +24,7 @@ sealed interface CollectorResult {
     data class Invalid(val message: String) : CollectorResult
 }
 
-@Serializable
-data class AgentAccountInfo(
-    val channelMasterId: Int,
-    val channelName: String,
-    val isDefault: Boolean,
-    val isDeleted: Boolean,
-    val isOfficial: Boolean,
-    val nickName: String,
-    val uid: String,
-)
+typealias AgentAccountInfo = model.AccountInfo
 
 @Serializable
 data class AgentGachaInfo(

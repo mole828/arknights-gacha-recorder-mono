@@ -1,7 +1,5 @@
 package com.example.service
 
-import api.ArkNights
-import api.Uid
 import io.github.smyrgeorge.sqlx4k.ResultSet
 import io.github.smyrgeorge.sqlx4k.Statement
 import io.github.smyrgeorge.sqlx4k.impl.extensions.asBoolean
@@ -11,35 +9,21 @@ import io.github.smyrgeorge.sqlx4k.impl.extensions.asUInt
 import io.github.smyrgeorge.sqlx4k.impl.extensions.asULong
 import io.github.smyrgeorge.sqlx4k.postgres.IPostgresSQL
 import io.github.smyrgeorge.sqlx4k.postgres.postgreSQL
+import model.AccountInfo
 import model.Char
 import model.Draw
-import model.GachasResponse
 import model.GachaPageRequest
+import model.GachaRecord
+import model.GachaRepository
+import model.GachasResponse
 import model.GachasResponseData
+import model.HgToken
 import model.Pagination
-
-data class UserToken(
-    val uid: Uid,
-    val hgToken: ArkNights.HgToken,
-    val nickName: String? = null,
-)
-
-interface GachaRepository {
-    suspend fun initSchema()
-    suspend fun upsertUser(accountInfo: ArkNights.AccountInfo, hgToken: ArkNights.HgToken)
-    suspend fun updateUser(accountInfo: ArkNights.AccountInfo)
-    suspend fun expireUid(uid: Uid)
-    suspend fun expireToken(hgToken: ArkNights.HgToken)
-    suspend fun setTokenExpired(hgToken: ArkNights.HgToken, expired: Boolean)
-    suspend fun activeTokens(): List<UserToken>
-    suspend fun users(): List<ArkNights.AccountInfo>
-    suspend fun expiredUsers(): List<ArkNights.AccountInfo>
-    suspend fun gachaPage(uid: Uid?, page: Long, pageSize: Int): GachasResponse
-    suspend fun record(gacha: ArkNights.GachaApi.Gacha): UInt
-}
+import model.Uid
+import model.UserToken
 
 class SqlxGachaRepository(private val db: IPostgresSQL) : GachaRepository {
-    override suspend fun initSchema() {
+    suspend fun initSchema() {
         db.execute(
             """
             create table if not exists "user" (
@@ -78,7 +62,7 @@ class SqlxGachaRepository(private val db: IPostgresSQL) : GachaRepository {
         db.execute("""create index if not exists idx_user_expired on "user"(expired);""").getOrThrow()
     }
 
-    override suspend fun upsertUser(accountInfo: ArkNights.AccountInfo, hgToken: ArkNights.HgToken) {
+    override suspend fun upsertUser(accountInfo: AccountInfo, hgToken: HgToken) {
         db.execute(
             Statement.create(
                 """
@@ -103,7 +87,7 @@ class SqlxGachaRepository(private val db: IPostgresSQL) : GachaRepository {
         ).getOrThrow()
     }
 
-    override suspend fun updateUser(accountInfo: ArkNights.AccountInfo) {
+    override suspend fun updateUser(accountInfo: AccountInfo) {
         db.execute(
             Statement.create(
                 """
@@ -125,11 +109,11 @@ class SqlxGachaRepository(private val db: IPostgresSQL) : GachaRepository {
             .getOrThrow()
     }
 
-    override suspend fun expireToken(hgToken: ArkNights.HgToken) {
+    override suspend fun expireToken(hgToken: HgToken) {
         setTokenExpired(hgToken, true)
     }
 
-    override suspend fun setTokenExpired(hgToken: ArkNights.HgToken, expired: Boolean) {
+    override suspend fun setTokenExpired(hgToken: HgToken, expired: Boolean) {
         db.execute(
             Statement.create("""update "user" set expired = :expired where hg_token = :hg_token;""")
                 .bind("expired", expired)
@@ -147,15 +131,15 @@ class SqlxGachaRepository(private val db: IPostgresSQL) : GachaRepository {
         ).getOrThrow().map { row ->
             UserToken(
                 uid = row.get("uid").asString(),
-                hgToken = ArkNights.HgToken(row.get("hg_token").asString()),
+                hgToken = HgToken(row.get("hg_token").asString()),
                 nickName = row.get("nick_name").asString(),
             )
         }
 
-    override suspend fun users(): List<ArkNights.AccountInfo> =
+    override suspend fun users(): List<AccountInfo> =
         db.fetchAll("""select * from "user" order by nick_name;""").getOrThrow().map { it.toAccountInfo() }
 
-    override suspend fun expiredUsers(): List<ArkNights.AccountInfo> =
+    override suspend fun expiredUsers(): List<AccountInfo> =
         db.fetchAll("""select * from "user" where expired = true order by nick_name;""")
             .getOrThrow()
             .map { it.toAccountInfo() }
@@ -226,7 +210,7 @@ class SqlxGachaRepository(private val db: IPostgresSQL) : GachaRepository {
         )
     }
 
-    override suspend fun record(gacha: ArkNights.GachaApi.Gacha): UInt {
+    override suspend fun record(gacha: GachaRecord): UInt {
         val affected = db.execute(
             Statement.create(
                 """
@@ -251,7 +235,7 @@ class SqlxGachaRepository(private val db: IPostgresSQL) : GachaRepository {
         return affected.toUInt()
     }
 
-    private fun Statement.bindAccount(accountInfo: ArkNights.AccountInfo): Statement =
+    private fun Statement.bindAccount(accountInfo: AccountInfo): Statement =
         bind("uid", accountInfo.uid)
             .bind("nick_name", accountInfo.nickName)
             .bind("channel_master_id", accountInfo.channelMasterId)
@@ -260,8 +244,8 @@ class SqlxGachaRepository(private val db: IPostgresSQL) : GachaRepository {
             .bind("is_deleted", accountInfo.isDeleted)
             .bind("is_official", accountInfo.isOfficial)
 
-    private fun ResultSet.Row.toAccountInfo(): ArkNights.AccountInfo =
-        ArkNights.AccountInfo(
+    private fun ResultSet.Row.toAccountInfo(): AccountInfo =
+        AccountInfo(
             uid = get("uid").asString(),
             nickName = get("nick_name").asString(),
             channelMasterId = get("channel_master_id").asInt(),
@@ -276,7 +260,7 @@ fun createGachaRepository(
     url: String,
     username: String,
     password: String,
-): GachaRepository {
+): SqlxGachaRepository {
     val normalizedUrl = url
         .removePrefix("jdbc:")
         .replaceFirst("postgres://", "postgresql://")

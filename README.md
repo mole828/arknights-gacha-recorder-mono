@@ -4,10 +4,12 @@
 
 | 模块 | 职责 |
 | --- | --- |
-| `modeling` | 公共数据模型、kRPC 采集接口与测试 |
-| `backend` | Ktor 接口、任务调度和 PostgreSQL 存储 |
+| `modeling` | 业务模型、登记与采集结果处理、仓库接口、kRPC 契约与测试 |
+| `backend` | Ktor 接口、业务装配、任务调度和 PostgreSQL 存储 |
 | `agent` | 执行鹰角接口采集任务的 JVM 应用 |
 | `webui` | Kotlin/JS、React、Ant Design 页面 |
+
+`modeling` 中的 `GachaService` 通过 `GachaRepository` 执行登记和采集结果保存，使用 `Collector` 调用采集能力。鹰角 API 由 `modeling/client/ArkNights` 统一实现，Agent 和后端分别注入、关闭自己的 `HttpClient`。后端提供 SQL 实现，管理 HTTP/RPC 连接、后台任务和定时循环。
 
 ## 构建
 

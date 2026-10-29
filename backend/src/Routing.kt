@@ -17,10 +17,10 @@ import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.pingPeriod
 import io.ktor.server.websocket.timeout
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlin.time.Duration.Companion.seconds
 
 fun Application.configureRouting(service: GachaRecorder, agentKey: String) {
     @Serializable
@@ -45,7 +45,7 @@ fun Application.configureRouting(service: GachaRecorder, agentKey: String) {
         masking = false
     }
 
-    val agents = Agents(service)
+    val agents = Agents(service.records)
 
     routing {
         @Serializable
@@ -67,6 +67,6 @@ fun Application.configureRouting(service: GachaRecorder, agentKey: String) {
         }
 
         agentPart(agentKey, agents)
-        userPart(service, agents)
+        userPart(service.records, agents)
     }
 }

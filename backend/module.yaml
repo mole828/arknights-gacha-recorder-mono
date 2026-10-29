@@ -23,5 +23,6 @@ dependencies:
   - io.github.smyrgeorge:log4k-classic:2.1.1
 
 test-dependencies@jvm:
+  - io.ktor:ktor-client-mock
   - io.ktor:ktor-server-test-host
   - io.ktor:ktor-client-websockets

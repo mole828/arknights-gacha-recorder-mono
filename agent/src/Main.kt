@@ -1,6 +1,9 @@
 package com.example
 
-import api.ArkNights
+import client.ArkNights
+import model.AccountInfo
+import model.HgToken
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.websocket.WebSockets
@@ -15,7 +18,6 @@ import kotlinx.rpc.registerService
 import kotlinx.rpc.krpc.rpcServerConfig
 import kotlinx.rpc.krpc.serialization.json.json
 import kotlinx.rpc.krpc.server.KrpcServer
-import rpc.AgentAccountInfo
 import rpc.AgentGachaInfo
 import rpc.Collector
 import rpc.CollectorResult
@@ -36,37 +38,22 @@ private val ktorClient = HttpClient(CIO) {
     }
 }
 
-private val api = ArkNights.default()
-private val gachaApi = ArkNights.GachaApi.default()
+private val apiHttpClient = HttpClient(CIO) {
+    install(HttpTimeout) {
+        connectTimeoutMillis = 5_000
+        requestTimeoutMillis = 10_000
+        socketTimeoutMillis = 5_000
+    }
+}
+private val api = ArkNights(apiHttpClient)
 
 private data class AccountContext(
     val appToken: ArkNights.AppToken,
-    val account: ArkNights.AccountInfo,
-)
-
-private fun ArkNights.AccountInfo.toRpc() = AgentAccountInfo(
-    channelMasterId = channelMasterId,
-    channelName = channelName,
-    isDefault = isDefault,
-    isDeleted = isDeleted,
-    isOfficial = isOfficial,
-    nickName = nickName,
-    uid = uid.value,
-)
-
-private fun ArkNights.GachaApi.GachaInfo.Companion.DefaultImpl.toRpc() = AgentGachaInfo(
-    charId = charId,
-    charName = charName,
-    gachaTs = gachaTs,
-    isNew = isNew,
-    poolId = poolId,
-    poolName = poolName,
-    pos = pos,
-    rarity = rarity,
+    val account: AccountInfo,
 )
 
 private suspend fun resolveAccount(token: String): AccountContext {
-    val hgToken = ArkNights.HgToken(token)
+    val hgToken = HgToken(token)
     val appToken = api.grantAppToken(hgToken)
     val account = api.bindingList(appToken).list
         .asSequence()
@@ -80,7 +67,7 @@ private suspend fun resolveAccount(token: String): AccountContext {
 private class AgentCollector : Collector {
     override suspend fun validate(token: String): CollectorResult = try {
         val account = resolveAccount(token).account
-        CollectorResult.Success(account = account.toRpc())
+        CollectorResult.Success(account = account)
     } catch (_: ArkNights.HgTokenExpired) {
         CollectorResult.Expired
     } catch (e: ArkNights.HgTokenInvalid) {
@@ -92,21 +79,21 @@ private class AgentCollector : Collector {
         val uid = accountContext.account.uid
         val u8Token = api.u8TokenByUid(accountContext.appToken, uid)
         val loginCookie = api.login(u8Token)
-        val pools = gachaApi.poolList(uid, u8Token, loginCookie)
+        val pools = api.poolList(uid, u8Token, loginCookie)
         val gachas = mutableListOf<AgentGachaInfo>()
 
         for (pool in pools) {
-            var history = gachaApi.history(
+            var history = api.history(
                 loginCookie = loginCookie,
                 u8Token = u8Token,
                 pool = pool,
                 size = 10u,
             )
-            gachas.addAll(history.list.map { it.toRpc() })
+            gachas.addAll(history.list)
 
             while (history.hasMore) {
                 val lastGacha = history.list.lastOrNull() ?: break
-                history = gachaApi.history(
+                history = api.history(
                     loginCookie = loginCookie,
                     u8Token = u8Token,
                     pool = pool,
@@ -114,12 +101,12 @@ private class AgentCollector : Collector {
                     gachaTs = lastGacha.gachaTs,
                     pos = lastGacha.pos,
                 )
-                gachas.addAll(history.list.map { it.toRpc() })
+                gachas.addAll(history.list)
             }
         }
 
         CollectorResult.Success(
-            account = accountContext.account.toRpc(),
+            account = accountContext.account,
             gachas = gachas,
         )
     } catch (_: ArkNights.HgTokenExpired) {
@@ -169,5 +156,6 @@ fun main() = runBlocking {
         }
     } finally {
         ktorClient.close()
+        apiHttpClient.close()
     }
 }
