@@ -12,6 +12,7 @@ data class SelectOption(
     val key: String? = null,
 )
 external interface SelectProps : PropsWithClassName {
+    var value: String?
     var options: Array<SelectOption>
     var showSearch: Boolean
     var onChange: (value: String) -> Unit

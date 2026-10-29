@@ -5,6 +5,15 @@ import kotlinx.serialization.Serializable
 typealias Uid = String
 
 @Serializable
+data class RegisterRequest(val token: String)
+
+@Serializable
+data class RegisterResponse(
+    val msg: String,
+    val uid: Uid? = null,
+)
+
+@Serializable
 data class Char(
     val isNew: Boolean,
     val rarity: UInt,

@@ -12,13 +12,15 @@ import react.dom.html.ReactHTML.span
 import top.moles.ui.PropsWithOnClick
 import web.cssom.*
 
-external interface ButtonProps : PropsWithOnClick, PropsWithValue<String>
+external interface ButtonProps : PropsWithOnClick, PropsWithValue<String> {
+    var disabled: Boolean?
+}
 
 val Button = FC <ButtonProps> { props ->
     div {
         label {
             onClick = {
-                props.onClick()
+                if (props.disabled != true) props.onClick()
             }
             css {
                 display = Display.block
@@ -33,7 +35,7 @@ val Button = FC <ButtonProps> { props ->
                 backgroundColor = Color("#158fc5")
                 backgroundRepeat = BackgroundRepeat.noRepeat
                 backgroundSize = 100.pct
-                cursor = Cursor.pointer
+                cursor = if (props.disabled == true) Cursor.default else Cursor.pointer
                 userSelect = None.none
                 transition = Transition(PropertyName.background, (0.3).s, delay = 0.s)
                 textAlign = TextAlign.center

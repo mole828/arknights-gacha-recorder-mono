@@ -9,7 +9,10 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import js.globals.globalThis
 import kotlinx.coroutines.*
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import model.RegisterRequest
+import model.RegisterResponse
 import react.*
 import react.dom.html.ReactHTML.a
 import react.dom.html.ReactHTML.b
@@ -30,7 +33,6 @@ import web.window._blank
 import kotlin.text.Typography.nbsp
 
 
-val scope = CoroutineScope(Dispatchers.Default)
 val ktorClient = HttpClient(Js)
 val json = Json {
     ignoreUnknownKeys = true
@@ -52,6 +54,58 @@ val App = FC<Props> {
     var displayData by useState<GachaPage?>(null)
     var pageState by useState(PageState(null, 0u))
     var userList by useState<List<User>>(emptyList())
+    var tokenInput by useState("")
+    var submitting by useState(false)
+    var registrationMessage by useState<String?>(null)
+    var refreshVersion by useState(0)
+    val registrationScope = useRef<CoroutineScope>(null)
+
+    useEffectOnce {
+        registrationScope.current = this
+        try {
+            awaitCancellation()
+        } finally {
+            registrationScope.current = null
+        }
+    }
+
+    fun submitToken() {
+        if (submitting || tokenInput.isBlank()) return
+        val scope = registrationScope.current ?: return
+        submitting = true
+        registrationMessage = "正在提交…"
+        val token = tokenInput
+        scope.launch {
+            try {
+                ktorClient.preparePost("/api/ark/register") {
+                    contentType(ContentType.Application.Json)
+                    setBody(json.encodeToString(RegisterRequest(token)))
+                }.execute { response ->
+                    if (!response.status.isSuccess()) {
+                        registrationMessage = "提交失败，请检查 token 后重试"
+                        return@execute
+                    }
+                    registrationMessage = "正在验证并采集记录，请稍候…"
+                    val result = json.decodeFromString<RegisterResponse>(response.bodyAsText())
+                    registrationMessage = result.msg
+                    result.uid?.let { uid ->
+                        tokenInput = ""
+                        val usersResponse = ktorClient.get("/api/ark/users")
+                        userList = json.decodeFromString<List<User>>(usersResponse.bodyAsText())
+                        pageState = PageState(uid, PageState.firstPage)
+                        refreshVersion += 1
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                registrationMessage = "请求失败，请稍后重试"
+            } finally {
+                submitting = false
+            }
+        }
+    }
+
     fun jumpTo(newPage: UInt) {
         if (newPage == pageState.page) return
         pageState = pageState.copy(page = newPage)
@@ -63,7 +117,7 @@ val App = FC<Props> {
         val data = json.decodeFromString<List<User>>(content)
         userList = data
     }
-    useEffect(pageState) {
+    useEffect(pageState, refreshVersion) {
         val resp = ktorClient.get("/api/ark/gachas") {
             parameter("page", pageState.page)
             pageState.uid?.let {
@@ -83,6 +137,7 @@ val App = FC<Props> {
                 }
             }
             Antd.Select {
+                value = pageState.uid
                 css {
                     width = 60.pct
                     marginLeft = 1.em
@@ -153,8 +208,11 @@ val App = FC<Props> {
                     css {
                         margin = 5.px
                     }
-                    var inputText = ""
                     form {
+                        onSubmit = {
+                            it.preventDefault()
+                            submitToken()
+                        }
                         div {
                             input {
                                 css {
@@ -173,24 +231,21 @@ val App = FC<Props> {
                                     background = None.none
                                 }
                                 placeholder = "复制 token 到此"
+                                value = tokenInput
+                                disabled = submitting
                                 onChange = {
-                                    inputText = it.target.value
+                                    tokenInput = it.target.value
                                 }
                             }
                         }
                     }
                     Button {
-                        onClick = {
-                            println("submit token $inputText")
-
-                            scope.async {
-                                ktorClient.post("/api/ark/register") {
-                                    parameter("token", inputText)
-                                }
-
-                            }
-                        }
-                        value = "Submit"
+                        disabled = submitting || tokenInput.isBlank()
+                        onClick = { submitToken() }
+                        value = if (submitting) "加载中…" else "Submit"
+                    }
+                    registrationMessage?.let { message ->
+                        div { +message }
                     }
                 }
                 div {

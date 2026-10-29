@@ -62,9 +62,10 @@ class Agents(private val recorder: GachaRecorder) {
         }
     }
 
-    suspend fun collect(agent: Collector, token: String) {
+    suspend fun collect(agent: Collector, token: String): CollectorResult {
         val hgToken = ArkNights.HgToken(token)
-        when (val result = agent.collect(token)) {
+        val result = agent.collect(token)
+        when (result) {
             is CollectorResult.Success -> {
                 recorder.upsert(result.account.toApi(), hgToken)
                 recorder.record(result.gachas.map {
@@ -78,6 +79,7 @@ class Agents(private val recorder: GachaRecorder) {
             }
             CollectorResult.Expired, is CollectorResult.Invalid -> recorder.setTokenExpired(hgToken, true)
         }
+        return result
     }
 }
 
