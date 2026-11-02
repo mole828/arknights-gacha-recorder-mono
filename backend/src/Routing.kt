@@ -1,6 +1,5 @@
 package com.example
 
-import com.example.controller.Agents
 import com.example.controller.agentPart
 import com.example.controller.userPart
 import com.example.service.GachaRecorder
@@ -45,8 +44,6 @@ fun Application.configureRouting(service: GachaRecorder, agentKey: String) {
         masking = false
     }
 
-    val agents = Agents(service.records)
-
     routing {
         @Serializable
         data class HealthCheckStruct(
@@ -66,7 +63,7 @@ fun Application.configureRouting(service: GachaRecorder, agentKey: String) {
             )
         }
 
-        agentPart(agentKey, agents)
-        userPart(service.records, agents)
+        agentPart(agentKey, service.agents)
+        userPart(service.records, service.agents)
     }
 }

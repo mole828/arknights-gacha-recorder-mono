@@ -1,8 +1,7 @@
 package com.example
 
 import client.ArkNights
-import model.AccountInfo
-import model.HgToken
+import client.ArkNightsCollector
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -19,7 +18,6 @@ import kotlinx.rpc.krpc.rpcServerConfig
 import kotlinx.rpc.krpc.serialization.json.json
 import kotlinx.rpc.krpc.server.KrpcServer
 import rpc.Collector
-import rpc.CollectorResult
 import rpc.asKrpcTransport
 import kotlin.time.Duration.Companion.seconds
 
@@ -44,64 +42,7 @@ private val apiHttpClient = HttpClient(CIO) {
         socketTimeoutMillis = 5_000
     }
 }
-private val api = ArkNights(apiHttpClient)
-
-private data class AccountContext(
-    val appToken: ArkNights.AppToken,
-    val account: AccountInfo,
-)
-
-private suspend fun resolveAccount(token: String): AccountContext {
-    val hgToken = HgToken(token)
-    val appToken = api.grantAppToken(hgToken)
-    val account = api.bindingList(appToken).list
-        .firstNotNullOfOrNull { it.bindingList.firstOrNull() }
-        ?: throw ArkNights.HgTokenInvalid(hgToken, "没有找到绑定账号")
-
-    return AccountContext(appToken, account)
-}
-
-private class AgentCollector : Collector {
-    override suspend fun validate(token: String): CollectorResult = try {
-        val account = resolveAccount(token).account
-        CollectorResult.Success(account = account)
-    } catch (_: ArkNights.HgTokenExpired) {
-        CollectorResult.Expired
-    } catch (e: ArkNights.HgTokenInvalid) {
-        CollectorResult.Invalid(e.msg)
-    }
-
-    override suspend fun collect(token: String): CollectorResult = try {
-        val (appToken, account) = resolveAccount(token)
-        val u8Token = api.u8TokenByUid(appToken, account.uid)
-        val loginCookie = api.login(u8Token)
-        val pools = api.poolList(account.uid, u8Token, loginCookie)
-        val gachas = buildList {
-            for (pool in pools) {
-                var history = api.history(loginCookie, u8Token, pool, size = 10u)
-                while (true) {
-                    addAll(history.list)
-                    if (!history.hasMore) break
-
-                    val lastGacha = history.list.lastOrNull() ?: break
-                    history = api.history(
-                        loginCookie = loginCookie,
-                        u8Token = u8Token,
-                        pool = pool,
-                        size = 10u,
-                        gachaTs = lastGacha.gachaTs,
-                        pos = lastGacha.pos,
-                    )
-                }
-            }
-        }
-        CollectorResult.Success(account = account, gachas = gachas)
-    } catch (_: ArkNights.HgTokenExpired) {
-        CollectorResult.Expired
-    } catch (e: ArkNights.HgTokenInvalid) {
-        CollectorResult.Invalid(e.msg)
-    }
-}
+private val collector = ArkNightsCollector(ArkNights(apiHttpClient))
 
 private suspend fun connectOnce() {
     ktorClient.webSocket(
@@ -117,7 +58,7 @@ private suspend fun connectOnce() {
             asKrpcTransport(),
         ) {}
 
-        server.registerService<Collector> { AgentCollector() }
+        server.registerService<Collector> { collector }
         println("kRPC collector connected")
 
         try {

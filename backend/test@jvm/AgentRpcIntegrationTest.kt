@@ -1,7 +1,6 @@
 package com.example
 
-import client.ArkNights
-import io.ktor.client.engine.mock.MockEngine
+import com.example.service.Agents
 import com.example.service.GachaRecorder
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO as ClientCIO
@@ -53,6 +52,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import model.AccountInfo
 import model.GachaRecord
 import model.GachaRepository
+import model.GachaService
 import model.GachasResponse
 import model.GachasResponseData
 import model.HgToken
@@ -83,9 +83,13 @@ class AgentRpcIntegrationTest {
     fun emptyCollectionRoundWaitsAndCanBeCancelled() = runBlocking {
         var rounds = 0
         val repository = RecordingRepository(beforeActiveTokens = { rounds++ })
-        val recorder = testRecorder(repository)
+        val agents = Agents(GachaService(repository), taskInterval = 60.seconds)
+        val idleCollector = TestCollector(
+            validateResult = { error("unexpected validation") },
+            collectResult = { error("unexpected collection") },
+        )
         val loop = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
-            recorder.mainLoop { 60.seconds }
+            agents.run(idleCollector)
         }
         try {
             assertEquals(1, rounds)
@@ -503,5 +507,4 @@ private suspend fun HttpClient.register(token: String): String =
         setBody(Json.encodeToString(RegisterRequest(token)))
     }.bodyAsText()
 
-private fun testRecorder(repository: GachaRepository): GachaRecorder =
-    GachaRecorder(repository, ArkNights(HttpClient(MockEngine { error("unexpected external API request") })))
+private fun testRecorder(repository: GachaRepository): GachaRecorder = GachaRecorder(repository)

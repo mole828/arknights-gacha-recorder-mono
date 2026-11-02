@@ -9,7 +9,7 @@
 | `agent` | 执行鹰角接口采集任务的 JVM 应用 |
 | `webui` | Kotlin/JS、React、Ant Design 页面 |
 
-`modeling` 中的 `GachaService` 通过 `GachaRepository` 执行登记和采集结果保存，使用 `Collector` 调用采集能力。鹰角 API 由 `modeling/client/ArkNights` 统一实现，Agent 和后端分别注入、关闭自己的 `HttpClient`。后端提供 SQL 实现，管理 HTTP/RPC 连接、后台任务和定时循环。
+`modeling` 中的 `GachaService` 通过 `GachaRepository` 执行登记和采集结果保存，使用 `Collector` 调用采集能力。鹰角 API 由 `modeling/client/ArkNights` 统一实现，Agent 和后端分别注入、关闭自己的 `HttpClient`。采集流程由 `ArkNightsCollector` 统一实现：独立 Agent 通过 kRPC 暴露它，后端在 `OPEN_LOOP=true` 时把它作为本地采集者加入同一任务队列。后端提供 SQL 实现，管理 HTTP/RPC 连接、后台任务和定时循环。
 
 ## 构建
 

@@ -1,6 +1,7 @@
 package com.example
 
 import client.ArkNights
+import client.ArkNightsCollector
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO as ClientCIO
 import io.ktor.client.plugins.HttpTimeout
@@ -15,7 +16,6 @@ import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 fun main() {
@@ -42,13 +42,13 @@ fun Application.module() {
             socketTimeoutMillis = 5_000
         }
     }
-    val service = GachaRecorder(repository, ArkNights(apiHttpClient))
+    val service = GachaRecorder(repository)
     monitor.subscribe(ApplicationStopped) {
         service.scope.cancel()
         apiHttpClient.close()
     }
     if (env("OPEN_LOOP").toBoolean()) {
-        monitor.subscribe(ServerReady) { service.scope.launch { service.mainLoop() } }
+        monitor.subscribe(ServerReady) { service.startLocalCollector(ArkNightsCollector(ArkNights(apiHttpClient))) }
     }
     configureRouting(service, requireNotNull(env("AGENT_KEY")))
 }

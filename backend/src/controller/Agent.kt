@@ -1,64 +1,21 @@
 package com.example.controller
 
-import io.github.smyrgeorge.log4k.Logger
-import io.github.smyrgeorge.log4k.classic.error
+import com.example.service.Agents
 import io.ktor.http.HttpHeaders
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Routing
 import io.ktor.server.routing.get
 import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.close
-import kotlin.time.Duration.Companion.minutes
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.rpc.krpc.client.InitializedKrpcClient
 import kotlinx.rpc.krpc.rpcClientConfig
 import kotlinx.rpc.krpc.serialization.json.json
 import kotlinx.rpc.withService
-import model.GachaService
 import rpc.Collector
 import rpc.asKrpcTransport
-
-class Agents(private val recorder: GachaService) {
-    private val connected = MutableStateFlow<Set<Collector>>(emptySet())
-    private val pending = ArrayDeque<String>()
-    private val queue = Mutex()
-    private val log = Logger.of("Agents")
-
-    val count: Int get() = connected.value.size
-    fun available(): Collector? = connected.value.randomOrNull()
-
-    suspend fun run(agent: Collector) {
-        connected.update { it + agent }
-        try {
-            while (currentCoroutineContext().isActive) {
-                try {
-                    val token = queue.withLock {
-                        if (pending.isEmpty()) pending.addAll(recorder.activeTasks().shuffled().map { it.hgToken.content })
-                        pending.removeFirstOrNull()
-                    }
-                    if (token != null) recorder.collect(agent, token)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    log.error("采集失败", e)
-                }
-                delay(2.minutes)
-            }
-        } finally {
-            connected.update { it - agent }
-        }
-    }
-}
 
 fun Routing.agentPart(agentKey: String, agents: Agents) {
     get("/agent/status") { call.respond(mapOf("connected" to agents.count)) }
